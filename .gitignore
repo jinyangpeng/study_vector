@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# 环境配置（保留 .env.example）
+.env
+.env.local
+*.local
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 前端
+node_modules/
+.vite/
+.cache/
+
+# 日志 / 数据
+logs/
+*.log
+data/
+*.sqlite
+*.db
+
+# Docker
+volumes/

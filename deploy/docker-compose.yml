@@ -1,0 +1,111 @@
+# 顶层 docker-compose：聚合后端 API + Milvus + 前端
+#
+# 启动：
+#   cp .env.example .env
+#   docker compose up -d
+#
+# 验证：
+#   - API:    http://localhost:8000/docs
+#   - 前端:   http://localhost:5173
+#   - Minio:  http://localhost:9001  (minioadmin / minioadmin)
+#
+# 关闭已存在的 Milvus（用户已部署）时，把 milvus/etcd/minio 三个服务注释掉，
+# 修改 .env 中 MILVUS_HOST 指向已存在的实例即可。
+
+name: study_vector
+
+services:
+  # ============== Milvus Standalone ==============
+  etcd:
+    container_name: study_vector_etcd
+    image: quay.io/coreos/etcd:v3.5.16
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - ./milvus/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    restart: unless-stopped
+    networks: [study_vector_net]
+
+  minio:
+    container_name: study_vector_minio
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data --console-address ":9001"
+    volumes:
+      - ./milvus/volumes/minio:/minio_data
+    ports:
+      - "9001:9001"
+    restart: unless-stopped
+    networks: [study_vector_net]
+
+  milvus:
+    container_name: study_vector_milvus
+    image: milvusdb/milvus:v2.4.10
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    depends_on:
+      - etcd
+      - minio
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - ./milvus/volumes/milvus:/var/lib/milvus
+    restart: unless-stopped
+    networks: [study_vector_net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============== Python API ==============
+  api:
+    container_name: study_vector_api
+    build:
+      context: ../backends/python
+      dockerfile: deploy/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      MILVUS_HOST: ${MILVUS_HOST:-milvus}
+      MILVUS_PORT: ${MILVUS_PORT:-19530}
+      MILVUS_USER: ${MILVUS_USER:-root}
+      MILVUS_PASSWORD: ${MILVUS_PASSWORD:-Milvus}
+      MILVUS_DB_NAME: ${MILVUS_DB_NAME:-default}
+      MILVUS_SECURE: ${MILVUS_SECURE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-true}
+    env_file:
+      - .env
+    depends_on:
+      milvus:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks: [study_vector_net]
+
+  # ============== 前端 ==============
+  frontend:
+    container_name: study_vector_frontend
+    build:
+      context: ../frontend
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    networks: [study_vector_net]
+
+networks:
+  study_vector_net:
+    driver: bridge

@@ -1,0 +1,144 @@
+# study_vector Python 后端 — just 命令集
+#
+# 约定：
+#   * 一切 Python 任务都用 `uv` 管理虚拟环境与依赖（无需手动 activate）
+#   * Windows shell = PowerShell；其他平台 = bash
+#   * 所有命令在 backends/python 目录下执行
+#   * 内部命令统一用 `python -m uv ...`（避免 uv.exe 缺失时的分支判断）
+#
+# 常用：
+#   just              # 列出所有 recipe
+#   just init         # 首次：创建 .env + 安装依赖
+#   just run          # 启动开发服务器（带热重载）
+#   just test         # 跑测试
+#   just lint         # ruff 检查
+#   just ci           # lint + test
+#   just docker-build # 构建 Docker 镜像
+#   just docker-run   # 容器内运行 API（同网络访问 milvus-standalone）
+
+set shell := ["powershell.exe", "-NoProfile", "-Command"]
+set dotenv-load := true
+
+# ───────────────────────── 默认：列出全部 ─────────────────────────
+default:
+    @just --list
+
+# ───────────────────────── 环境初始化 ─────────────────────────
+
+# 首次安装：复制 .env + 安装依赖
+init:
+    if (Test-Path .env) { Write-Host "ℹ️  .env 已存在，跳过复制" } else { Copy-Item config/dev.env .env; Write-Host "✅ 已创建 .env" }
+    just install
+
+# 安装生产依赖（写入 uv.lock）
+install:
+    python -m uv sync --frozen
+
+# 安装包含开发依赖的完整环境
+install-dev:
+    python -m uv sync --all-extras
+
+# 更新依赖（会改 uv.lock）
+update:
+    python -m uv sync --upgrade
+
+# ───────────────────────── 开发服务器 ─────────────────────────
+
+# 启动开发服务器（默认 0.0.0.0:8000）
+run host="0.0.0.0" port="8000":
+    python -m uv run uvicorn study_vector.main:app --host {{host}} --port {{port}} --reload --log-level info
+
+# 仅启动一次（不监听文件变更）
+serve host="0.0.0.0" port="8000":
+    python -m uv run uvicorn study_vector.main:app --host {{host}} --port {{port}} --log-level info
+
+# 进入项目 venv 的 Python REPL
+shell:
+    python -m uv run python
+
+# 在 venv 里跑任意命令
+py *args:
+    python -m uv run python {{args}}
+
+# ───────────────────────── 测试与质量 ─────────────────────────
+
+# 跑全部测试
+test:
+    python -m uv run pytest -v
+
+# 跑指定关键字的测试
+test-k pattern:
+    python -m uv run pytest -v -k "{{pattern}}"
+
+# 跑全部测试并显示覆盖率
+test-cov:
+    python -m uv run pytest -v --cov=src/study_vector --cov-report=term-missing
+
+# ruff 检查
+lint:
+    python -m uv run ruff check src tests
+
+# ruff 自动修复
+fix:
+    python -m uv run ruff check --fix src tests
+    python -m uv run ruff format src tests
+
+# ruff 格式化（不修改逻辑）
+format:
+    python -m uv run ruff format src tests
+
+# CI 用的完整校验（lint + test）
+ci: lint test
+    Write-Host "✅ ci passed"
+
+# ───────────────────────── 清理 ─────────────────────────
+
+# 清理缓存与构建产物
+clean:
+    Remove-Item -Recurse -Force .venv, .pytest_cache, .ruff_cache, dist, build, htmlcov -ErrorAction SilentlyContinue
+    Remove-Item -Force .coverage -ErrorAction SilentlyContinue
+    Get-ChildItem -Recurse -Directory -Filter __pycache__ -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+    Get-ChildItem -Recurse -Directory -Filter "*.egg-info" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+    Write-Host "✅ 清理完成"
+
+# 深度清理（含 uv.lock 重新生成）
+clean-all: clean
+    Remove-Item -Force uv.lock -ErrorAction SilentlyContinue
+    Write-Host "✅ 已删除 uv.lock，下次 install 会重新生成"
+
+# ───────────────────────── Docker ─────────────────────────
+
+# 构建 Docker 镜像
+docker-build tag="dev":
+    docker build -f deploy/Dockerfile -t study-vector-api:{{tag}} .
+
+# 在容器内运行 API（同网络，容器名 milvus-standalone）
+docker-run tag="dev":
+    docker network create study_vector_study_vector_net 2>&1 | Out-Null
+    docker network connect study_vector_study_vector_net milvus-standalone 2>&1 | Out-Null
+    docker rm -f study_vector_api 2>&1 | Out-Null
+    docker run -d --name study_vector_api --network study_vector_study_vector_net -p 8000:8000 -e APP_ENV=dev -e LOG_LEVEL=INFO -e MILVUS_HOST=milvus-standalone -e MILVUS_PORT=19530 -e MILVUS_USER=root -e MILVUS_PASSWORD=Milvus -e MILVUS_DB_NAME=default study-vector-api:{{tag}}
+    Write-Host "✅ 容器已启动：study_vector_api → http://127.0.0.1:8000"
+
+# 停 + 删 API 容器
+docker-stop:
+    docker rm -f study_vector_api 2>&1 | Out-Null
+    Write-Host "✅ 已停 study_vector_api"
+
+# 看 API 容器日志
+docker-logs:
+    docker logs -f study_vector_api
+
+# ───────────────────────── 实用工具 ─────────────────────────
+
+# 列出当前 venv 里的 Python 解释器路径
+venv-path:
+    python -m uv run python -c "import sys; print(sys.executable)"
+
+# 验证 venv 已激活
+venv-info:
+    python -m uv run python -c "import sys, study_vector; print('python:', sys.executable); print('study_vector:', study_vector.__file__)"
+
+# 打开 Python REPL（项目环境）
+repl:
+    python -m uv run ipython

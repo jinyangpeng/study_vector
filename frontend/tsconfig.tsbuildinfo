@@ -1,0 +1,1 @@
+{"root":["./src/env.d.ts","./src/main.ts","./src/api/client.ts","./src/api/index.ts","./src/router/index.ts","./src/stores/backend.ts","./src/app.vue","./src/components/applayout.vue","./src/views/collectiondetail.vue","./src/views/dashboard.vue","./auto-imports.d.ts","./components.d.ts"],"version":"5.9.3"}

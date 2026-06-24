@@ -1,0 +1,5 @@
+[
+  {"id":"a","vector":[0.1,0.2,0.3,0.4],"payload":{"tag":"x","lang":"zh"}},
+  {"id":"b","vector":[0.2,0.1,0.4,0.3],"payload":{"tag":"y","lang":"en"}},
+  {"id":"c","vector":[0.9,0.8,0.7,0.6],"payload":{"tag":"y","lang":"en"}}
+]
