@@ -1,12 +1,10 @@
 <script setup lang="ts">
-// 响应式布局：顶栏 + 抽屉式侧栏（移动端）+ 后端切换
-import { ref } from 'vue'
+// 顶栏 + 后端切换；侧栏交给各向量库子布局（MilvusLayout 等）
 import { useRouter } from 'vue-router'
 import { useBackendStore } from '@/stores/backend'
 
 const router = useRouter()
 const backend = useBackendStore()
-const drawer = ref(false)
 
 const onBackendChange = (b: any) => {
   backend.select(b)
@@ -28,13 +26,6 @@ const onBackendChange = (b: any) => {
         padding: 0 16px;
       "
     >
-      <el-button
-        text
-        :icon="'Menu'"
-        class="mobile-only"
-        @click="drawer = true"
-        style="font-size: 20px"
-      />
       <span
         style="
           font-weight: 600;
@@ -53,9 +44,8 @@ const onBackendChange = (b: any) => {
           font-size: 12px;
           margin-left: 8px;
         "
-        class="desktop-only"
       >
-        向量数据库研究平台
+        Milvus 向量数据库实战教学平台
       </span>
 
       <div style="margin-left: auto; display: flex; align-items: center; gap: 12px">
@@ -64,7 +54,7 @@ const onBackendChange = (b: any) => {
           :model-value="backend.current"
           value-key="baseUrl"
           size="default"
-          style="min-width: 220px"
+          style="min-width: 240px"
           @change="onBackendChange"
         >
           <el-option
@@ -77,37 +67,8 @@ const onBackendChange = (b: any) => {
       </div>
     </el-header>
 
-    <!-- 移动端侧栏抽屉 -->
-    <el-drawer v-model="drawer" direction="ltr" size="60%" :with-header="false">
-      <div style="padding: 16px">
-        <h3>导航</h3>
-        <el-menu :default-active="$route.path" router @select="drawer = false">
-          <el-menu-item index="/">
-            <el-icon><DataLine /></el-icon>
-            <span>集合管理</span>
-          </el-menu-item>
-        </el-menu>
-      </div>
-    </el-drawer>
-
-    <el-container>
-      <!-- 桌面端侧栏 -->
-      <el-aside
-        width="200px"
-        class="desktop-only"
-        style="background: #fff; border-right: 1px solid #ebeef5"
-      >
-        <el-menu :default-active="$route.path" router style="border: none">
-          <el-menu-item index="/">
-            <el-icon><DataLine /></el-icon>
-            <span>集合管理</span>
-          </el-menu-item>
-        </el-menu>
-      </el-aside>
-
-      <el-main>
-        <slot />
-      </el-main>
-    </el-container>
+    <el-main>
+      <router-view />
+    </el-main>
   </el-container>
 </template>

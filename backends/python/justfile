@@ -108,9 +108,9 @@ clean-all: clean
 
 # ───────────────────────── Docker ─────────────────────────
 
-# 构建 Docker 镜像
+# 构建 Docker 镜像（Dockerfile 集中在顶层 docker/api/，context 需为项目根）
 docker-build tag="dev":
-    docker build -f deploy/Dockerfile -t study-vector-api:{{tag}} .
+    docker build -f ../../docker/api/Dockerfile -t study-vector-api:{{tag}} ../..
 
 # 在容器内运行 API（同网络，容器名 milvus-standalone）
 docker-run tag="dev":

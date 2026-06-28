@@ -20,16 +20,14 @@ backends/
 │   ├── pyproject.toml
 │   ├── src/study_vector/...
 │   ├── tests/
-│   ├── config/{dev,test,prod}.env
-│   └── deploy/Dockerfile
+│   └── config/{dev,test,prod}.env
 ├── go/                # 未来
 │   ├── go.mod
-│   ├── cmd/api/main.go
-│   └── deploy/Dockerfile
+│   └── cmd/api/main.go
 └── node/              # 未来
     ├── package.json
-    ├── src/...
-    └── Dockerfile
+    └── src/...
+# 注：各语言镜像 Dockerfile 统一置于顶层 docker/<lang>/Dockerfile
 ```
 
 每个语言子项目：
@@ -97,7 +95,7 @@ export function getClient() {
 
 ## 5. 顶层编排
 
-`deploy/docker-compose.yml`：
+`docker/docker-compose.yml`：
 
 ```yaml
 services:
@@ -128,14 +126,14 @@ services:
 
 ## 6. 新增一门语言（以 Go 为例）的步骤
 
-1. `mkdir -p backends/go/{cmd/api,internal,deploy}`
+1. `mkdir -p backends/go/{cmd/api,internal}`
 2. 选框架：`gin`（社区主流，文档丰富）或 `chi`（更轻量）
 3. 复制本仓库的 `core/settings.py` 思路 → `internal/config/config.go`
 4. 复制 `domain/models.py` → `internal/domain/models.go`（Pydantic 等价物可用 `go-playground/validator`）
 5. 在 `internal/repository/milvus.go` 调 milvus-sdk-go 实现 `VectorRepository` 接口（Go 用 interface）
 6. `cmd/api/main.go` 装配路由（与 Python 对齐）
-7. `deploy/Dockerfile` 多阶段构建（golang:1.22-alpine → alpine）
-8. `deploy/docker-compose.yml` 加 `go-api` 服务
+7. `docker/go/Dockerfile` 多阶段构建（golang:1.22-alpine → alpine）
+8. `docker/docker-compose.yml` 加 `go-api` 服务
 9. `frontend/src/stores/backend.ts` 加 `{ name: 'Go Gin', baseUrl: 'http://127.0.0.1:8001', language: 'go' }`
 10. E2E：`FRONTEND_URL=... API_URL=http://127.0.0.1:8001 node e2e/smoke.mjs`
 

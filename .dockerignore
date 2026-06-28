@@ -1,0 +1,50 @@
+# ============================================================================
+# .dockerignore — 减小构建上下文、加速构建、避免泄露
+# 放在项目根目录（build context 根），对所有 docker build 生效
+# ============================================================================
+
+# 版本控制 / IDE
+.git
+.gitignore
+.github
+.vscode
+.idea
+.codebuddy
+
+# Python 缓存与虚拟环境
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+
+# Node 缓存与构建产物（镜像内重新安装/构建）
+**/node_modules
+**/dist
+**/.nuxt
+**/.output
+
+# 环境变量与密钥（绝不打包进镜像）
+# 注意：backends/python/config/*.env 是运行时多环境配置，必须保留，故不用通配 **/*.env
+.env
+.env.*
+deploy/.env
+deploy/.env.*
+docker/.env
+docker/.env.*
+backends/python/.env
+backends/python/.env.*
+
+# 数据卷与日志
+docker/volumes
+deploy/milvus/volumes
+**/*.log
+
+# 文档与脚本（镜像运行不需要）
+docs
+scripts
+README.md
+justfile

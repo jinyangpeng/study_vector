@@ -14,6 +14,7 @@ export function getClient(): AxiosInstance {
   })
 
   // 响应拦截：直接返回 data 字段（业务层统一格式 { code, message, data }）
+  // 错误时把后端 message 冒泡出来
   _instance.interceptors.response.use(
     (resp) => resp.data,
     (err) => {
@@ -30,4 +31,14 @@ export function getClient(): AxiosInstance {
   })
 
   return _instance
+}
+
+/** 不走响应拦截的"裸"客户端（用于 ApiResponseViewer 教学展示完整状态码/headers） */
+export function getRawClient(): AxiosInstance {
+  const backend = useBackendStore()
+  return axios.create({
+    baseURL: backend.current.baseUrl,
+    timeout: 30000,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }

@@ -1,0 +1,2009 @@
+openapi: 3.1.0
+info:
+  title: study_vector API
+  version: 0.2.0
+  summary: Milvus 向量数据库实战教学平台 — 统一 REST API
+  description: '# study_vector API 契约
+
+
+    ## 教学目标
+
+    1. **多向量库适配**：通过 `VectorRepository` 抽象支持多种向量库（V1：Milvus）
+
+    2. **教学友好**：每个字段都有 description 和 examples，可直接作为教学示例
+
+    3. **契约稳定**：本文件是 API 的唯一事实源，后端实现 / 前端类型 / 契约测试都从这里派生
+
+
+    ## 通用约定
+
+    - 所有响应统一格式：`{ code, message, data }`
+
+    - `code = 0` 表示业务成功；非 0 是错误码（与 HTTP 状态码正交）
+
+    - 业务异常用 `4xx`，后端错误用 `5xx`，向量库后端错误统一 `502`
+
+    - 业务 ID 字段统一用字符串（即便 Milvus 内部可能是 INT64）；向量库自动转换
+
+
+    ## 路径前缀
+
+    - 所有 API 前缀 `/api/v1`
+
+
+    ## 后端实现优先级
+
+    | 阶段 | 端点 | 状态 |
+
+    |---|---|---|
+
+    | 1.1 | health / collections / vectors | ✅ 已实现 |
+
+    | 1.3 | collections/{name}/load, /release | 🔜 |
+
+    | 1.4 | collections/{name}/indexes | 🔜 |
+
+    | 1.5 | collections/{name}/partitions | 🔜 |
+
+    | 1.6 | collections/{name}/alias | 🔜 |
+
+    | 1.7 | collections/{name}/query | 🔜 |
+
+    | 1.8 | collections/{name}/hybrid_search | 🔜 |
+
+    | 1.9 | databases / users | 🔜 |
+
+    '
+  contact:
+    name: study_vector contributors
+  license:
+    name: MIT
+servers:
+- url: http://localhost:8000
+  description: 本地开发（Python FastAPI）
+tags:
+- name: health
+  description: 探针端点（k8s / 监控系统用）
+- name: collections
+  description: '## 集合（Collection）管理
+
+    向量集合是组织向量数据的容器，对应传统数据库的"表"。
+
+    本节演示：创建 / 列出 / 查看 / 删除 / 加载 / 释放 / Alias。
+
+    '
+- name: vectors
+  description: '## 向量（Entity）CRUD
+
+    单条向量记录的插入 / 更新 / 查询 / 删除。
+
+    '
+- name: search
+  description: '## 向量检索
+
+    相似度检索（ANN），是向量数据库的核心能力。
+
+    包括：基础检索 / 标量检索 / 混合检索 / 迭代检索。
+
+    '
+- name: indexes
+  description: '## 索引管理
+
+    加速检索的索引结构（FLAT / IVF / HNSW / AUTOINDEX 等）。
+
+    '
+- name: partitions
+  description: '## 分区
+
+    将集合按业务维度切分，提升检索效率。
+
+    '
+- name: alias
+  description: '## Alias
+
+    集合的别名；支持零停机切换。
+
+    '
+- name: databases
+  description: '## 数据库（DB）
+
+    Milvus 支持多数据库隔离；类似 MySQL 的"database"。
+
+    '
+- name: users
+  description: '## 用户与权限
+
+    Milvus 的 RBAC（v2.4+ 完整支持）。
+
+    '
+paths:
+  /api/v1/health:
+    get:
+      tags:
+      - health
+      summary: 存活探针
+      description: '进程存活探针。**不**检查任何依赖（避免级联失败导致 Pod 反复重启）。
+
+        K8s 用它决定是否重启 Pod。
+
+        '
+      operationId: liveness
+      responses:
+        '200':
+          description: 进程存活
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: ok
+                    data:
+                      status: ok
+  /api/v1/health/ready:
+    get:
+      tags:
+      - health
+      summary: 就绪探针（含 Milvus 健康）
+      description: '进程就绪探针。**检查 Milvus 连通性**。
+
+        - Milvus OK → 200 + status=ready
+
+        - Milvus 不可用 → 503 + status=not_ready（K8s 会把流量切走）
+
+
+        教学点：liveness 与 readiness 的区别。
+
+        '
+      operationId: readiness
+      responses:
+        '200':
+          description: 就绪（含 Milvus 健康）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              examples:
+                ready:
+                  value:
+                    code: 0
+                    message: ready
+                    data:
+                      status: ready
+                      checks:
+                        milvus: ok
+        '503':
+          description: Milvus 不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              examples:
+                down:
+                  value:
+                    code: 503
+                    message: milvus down
+                    data:
+                      status: not_ready
+                      checks:
+                        milvus: down
+  /api/v1/collections:
+    get:
+      tags:
+      - collections
+      summary: 列出所有集合
+      description: '返回当前 DB 下所有集合的名字。
+
+
+        教学点：Milvus 用 etcd 存元数据；列集合是元数据查询，不会扫数据。
+
+        '
+      operationId: listCollections
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: string
+                      example:
+                      - demo
+                      - tutorial_index
+    post:
+      tags:
+      - collections
+      summary: 创建集合
+      description: '根据 schema 创建一个空集合，并自动建好 AUTOINDEX + 加载到内存。
+
+
+        教学点：
+
+        - 集合 = 表 + schema + 索引
+
+        - 索引建好才能检索
+
+        - **AUTOINDEX** 是 Milvus 的"自动选最优索引"机制（生产推荐）
+
+        '
+      operationId: createCollection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionSchema'
+              additionalProperties: false
+            examples:
+              tiny:
+                summary: 最小可用（教学示例用 4 维）
+                value:
+                  name: demo
+                  dimension: 4
+                  metric: COSINE
+              openai_1536:
+                summary: OpenAI text-embedding-3-small
+                value:
+                  name: openai_chunks
+                  dimension: 1536
+                  metric: COSINE
+                  description: 文档块向量库
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          $ref: '#/components/responses/BackendError'
+        '400': &id001
+          $ref: '#/components/responses/BadRequestBody'
+  /api/v1/collections/{name}:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 集合名
+    get:
+      tags:
+      - collections
+      summary: 查看集合详情
+      description: '返回集合的完整元信息：维度 / 度量 / 行数 / 加载状态 / 索引。
+
+        '
+      operationId: getCollection
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/CollectionInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - collections
+      summary: 删除集合
+      description: '删除集合及其所有数据。**不可逆**。
+
+        生产建议：删除前先 release + 备份元数据。
+
+        '
+      operationId: dropCollection
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/collections/{name}/load:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - collections
+      summary: 加载到内存
+      description: '把集合索引加载到查询节点内存中。
+
+        **检索前必须先 load**。
+
+
+        教学点：
+
+        - 大集合 load 耗时长（按数据量级分钟级）
+
+        - `replica_number` 控制副本数（提升读 QPS）
+
+        '
+      operationId: loadCollection
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': &id002
+          $ref: '#/components/responses/NotFound'
+        '422': &id003
+          $ref: '#/components/responses/BadRequest'
+        '400': *id001
+  /api/v1/collections/{name}/release:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - collections
+      summary: 从内存释放
+      description: '从查询节点卸载集合。**不影响数据**，只释放内存。
+
+        '
+      operationId: releaseCollection
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+        '422':
+          $ref: '#/components/responses/BadRequest'
+        '400': *id001
+  /api/v1/vectors/{collection}/insert:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - vectors
+      summary: 批量插入向量
+      description: '插入一批向量；返回每条的主键。
+
+
+        教学点：
+
+        - 批量插入比逐条快一个数量级
+
+        - 主键留空时后端自动生成 UUID
+
+        - payload 是任意 JSON（前提是 schema 允许动态字段或预定义）
+
+        '
+      operationId: insertVectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/VectorRecord'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        ids:
+                          type: array
+                          items:
+                            type: string
+                        count:
+                          type: integer
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/vectors/{collection}/upsert:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - vectors
+      summary: 存在则更新否则插入
+      operationId: upsertVectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/VectorRecord'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        ids:
+                          type: array
+                          items:
+                            type: string
+                        count:
+                          type: integer
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/vectors/{collection}/delete:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - vectors
+      summary: 按 id 删除向量
+      description: 'Milvus 的删除是**软删除**（标记 deleted=true），后台 compaction 才真删。
+
+
+        两种删除方式：
+
+        1. 按 id：`{"ids": ["v1", "v2"]}`
+
+        2. 按 filter：`{"filter": {"category": "news"}}`（自动转 Milvus expr）
+
+        '
+      operationId: deleteVectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        deleted:
+                          type: integer
+                          description: 实际删除条数
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/vectors/{collection}/get:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - vectors
+      summary: 按 id 拉取向量
+      operationId: getVectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/VectorRecord'
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/vectors/{collection}/search:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - search
+      summary: 向量相似度检索（ANN）
+      description: '给定 query 向量，返回集合内最相似的 top_k 条记录。
+
+
+        教学点：
+
+        - **ANN**（Approximate Nearest Neighbor）：用索引近似搜索，速度比精确快几个数量级
+
+        - 检索前**必须**已加载到内存（`loaded=true`）
+
+        - `filter` 在向量检索之前先做标量过滤，可显著提速
+
+        - `search_params` 调参：IVF 用 `nprobe`（越大越准越慢）；HNSW 用 `ef`（同上）
+
+        '
+      operationId: searchVectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/SearchResult'
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/vectors/{collection}/query:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - search
+      summary: 标量检索 / 计数
+      description: '不走向量相似度，只按标量条件查询。
+
+
+        两种用途：
+
+        1. 标量过滤：`{"filter": {"category": "news"}, "limit": 100}`
+
+        2. 计数：`{"filter": {}, "count_only": true}` → `data: 1024`
+
+        '
+      operationId: queryVectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      oneOf:
+                      - type: array
+                        items:
+                          $ref: '#/components/schemas/VectorRecord'
+                      - type: integer
+                        description: count_only=true 时为总条数
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/collections/{name}/indexes:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - indexes
+      summary: 列出索引
+      operationId: listIndexes
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/IndexInfo'
+        '404': *id002
+    post:
+      tags:
+      - indexes
+      summary: 建索引
+      description: '为向量字段建索引。
+
+
+        教学点：
+
+        - 集合创建时默认建 AUTOINDEX；如要换 IVF / HNSW 需先 drop 再建
+
+        - 建索引是**阻塞**操作（大集合可能数十分钟）
+
+        - 索引建好才能 release；建议建好后再 release 释放构建期内存
+
+        '
+      operationId: createIndex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIndexRequest'
+              # 显式不开 additionalProperties: false，避免 schemathesis 4.x strict-mode
+              # 在 CreateIndexRequest 内含 free-form `params` 对象时触发 Unsatisfiable
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/collections/{name}/indexes/{field_name}:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: field_name
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      tags:
+      - indexes
+      summary: 删除索引
+      operationId: dropIndex
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+  /api/v1/collections/{name}/partitions:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      tags:
+      - partitions
+      summary: 列出分区
+      operationId: listPartitions
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/PartitionInfo'
+        '404': *id002
+    post:
+      tags:
+      - partitions
+      summary: 创建分区
+      description: '按业务维度（时间 / 类别）分区。检索时 `partition_names` 限定扫描范围。
+
+        '
+      operationId: createPartition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePartitionRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+        '422': *id003
+        '400': *id001
+  /api/v1/collections/{name}/partitions/{partition}:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: partition
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      tags:
+      - partitions
+      summary: 删除分区
+      operationId: dropPartition
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+  /api/v1/collections/{name}/alias:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - alias
+      summary: 给集合绑定 alias
+      description: '一个集合可以有多个 alias；一个 alias 只能指向一个集合。
+
+        用于零停机切换（reindex 流程：建新集合 → 写双写 → alias 切换 → 删旧集合）。
+
+        '
+      operationId: createAlias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - alias
+              properties:
+                alias:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+                  description: alias 名
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+        '422': *id003
+        '400': *id001
+    get:
+      tags:
+      - alias
+      summary: 列出集合的 alias
+      operationId: listAliases
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: string
+        '404': *id002
+  /api/v1/collections/{name}/alias/{alias}:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: alias
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      tags:
+      - alias
+      summary: 解绑 alias
+      operationId: dropAlias
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+  /api/v1/databases:
+    get:
+      tags:
+      - databases
+      summary: 列出数据库
+      operationId: listDatabases
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: string
+    post:
+      tags:
+      - databases
+      summary: 创建数据库
+      operationId: createDatabase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+                  description: 数据库名
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '422': *id003
+        '400': *id001
+  /api/v1/databases/{name}:
+    parameters:
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      tags:
+      - databases
+      summary: 删除数据库
+      operationId: dropDatabase
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+  /api/v1/users:
+    get:
+      tags:
+      - users
+      summary: 列出用户
+      operationId: listUsers
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/UserInfo'
+    post:
+      tags:
+      - users
+      summary: 创建用户
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/UserInfo'
+        '422': *id003
+        '400': *id001
+  /api/v1/users/{user_name}:
+    parameters:
+    - name: user_name
+      in: path
+      required: true
+      schema:
+        type: string
+    delete:
+      tags:
+      - users
+      summary: 删除用户
+      operationId: dropUser
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '404': *id002
+  /api/v1/vectors/{collection}/hybrid_search:
+    parameters:
+    - name: collection
+      in: path
+      required: true
+      schema:
+        type: string
+    post:
+      tags:
+      - search
+      summary: 混合检索（dense + sparse + RRF）
+      description: '把稠密路（语义）和稀疏路（关键词）各自走一遍 ANN，
+
+        然后用 RRF（Reciprocal Rank Fusion）合并排序。
+
+
+        教学点：
+
+        - 真实生产场景下，常常 dense + sparse 联合检索
+
+        - 公式：`score(d) = Σ_routes [ weight / (k + rank) ]`
+
+        - 调权重的本质：在两条路之间做 trade-off
+
+        '
+      operationId: hybridSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HybridSearchRequest'
+              additionalProperties: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/SearchResult'
+        '404': *id002
+        '422': *id003
+        '400': *id001
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      description: '**统一响应格式**：所有业务接口都包成这个形状。
+
+        - `code = 0` 表示成功
+
+        - `code ≠ 0` 表示错误（业务 / 校验 / 后端），对应 HTTP 状态码见 error codes 表
+
+        '
+      required:
+      - code
+      - message
+      - data
+      properties:
+        code:
+          type: integer
+          description: 业务码。0=成功；非 0=错误（见错误码表）
+          example: 0
+        message:
+          type: string
+          description: 人类可读消息
+          example: success
+        data:
+          description: 业务负载；类型由具体端点决定
+          oneOf:
+          - type: object
+          - type: array
+          - type: string
+          - type: number
+          - type: boolean
+          - type: 'null'
+      additionalProperties: false
+    ErrorCode:
+      type: integer
+      description: '业务错误码（整数，与 HTTP 状态码正交）。
+
+
+        编码规则：`http_status * 100 + 序号`，便于一眼看出错误类别。
+
+
+        常见值：
+
+        - `0`：成功
+
+        - `1404`：COLLECTION_NOT_FOUND
+
+        - `1409`：COLLECTION_ALREADY_EXISTS
+
+        - `1422`：VALIDATION_ERROR / VECTOR_DIMENSION_MISMATCH
+
+        - `1502`：VECTOR_BACKEND_ERROR
+
+        - `1500`：INTERNAL_ERROR
+
+        - `2404`：PARTITION_NOT_FOUND
+
+        - `3404`：INDEX_NOT_FOUND
+
+        '
+      example: 0
+      enum:
+      - 0
+      - 1404
+      - 1409
+      - 1422
+      - 1502
+      - 1500
+      - 2404
+      - 3404
+    DistanceMetric:
+      type: string
+      enum:
+      - COSINE
+      - L2
+      - IP
+      - HAMMING
+      - JACCARD
+      description: '相似度度量。
+
+        - **COSINE**（余弦）：只看方向不看模长，文本嵌入**最常用**；归一化向量等价于内积
+
+        - **L2**（欧氏距离）：两点直线距离；对向量模长敏感
+
+        - **IP**（内积）：未归一化向量的"对齐度"
+
+        - **HAMMING / JACCARD**：二值向量专用
+
+        '
+      example: COSINE
+    IndexType:
+      type: string
+      enum:
+      - FLAT
+      - IVF_FLAT
+      - IVF_SQ8
+      - IVF_PQ
+      - HNSW
+      - ANNOY
+      - AUTOINDEX
+      - DISKANN
+      description: '索引类型。
+
+        - **AUTOINDEX**（生产推荐）：Milvus 自动选最优
+
+        - **HNSW**：高召回 / 内存允许
+
+        - **IVF_FLAT / SQ8 / PQ**：大数据 / 不同压缩比
+
+        - **FLAT**：精确 / 小数据
+
+        - **ANNOY**：只读场景
+
+        - **DISKANN**：内存不够 / 大规模
+
+        '
+      example: AUTOINDEX
+    VectorType:
+      type: string
+      enum:
+      - FloatVector
+      - BinaryVector
+      - Float16Vector
+      - BFloat16Vector
+      - SparseFloatVector
+      - Int8Vector
+      description: '向量数据类型。
+
+        - **FloatVector**（默认）：通用 embedding，4×D bytes
+
+        - **BinaryVector**：二值特征，D/8 bytes；维度必须是 8 的倍数；配 HAMMING/JACCARD
+
+        - **Float16Vector**：半精度，2×D bytes；配 COSINE/L2/IP
+
+        - **BFloat16Vector**：训练用，2×D bytes；配 COSINE/L2/IP
+
+        - **SparseFloatVector**：稀疏关键词，IP 度量；向量以 dict 形式传入
+
+        - **Int8Vector**：量化，D bytes；配 L2
+
+        '
+      example: FloatVector
+    ConsistencyLevel:
+      type: string
+      enum:
+      - Strong
+      - Session
+      - Bounded
+      - Eventually
+      description: '一致性等级。
+
+        - **Strong**：强一致（最高延迟）
+
+        - **Session**：单会话内一致（默认）
+
+        - **Bounded**：可容忍旧数据
+
+        - **Eventually**：最终一致（最快）
+
+        '
+      example: Session
+    CollectionSchema:
+      type: object
+      description: '业务层集合 schema。
+
+        统一约定：所有集合自动包含三字段
+
+        - `<primary_field>` (VARCHAR, 主键)
+
+        - `<vector_field>` (FLOAT_VECTOR, 维度=dimension)
+
+        - `payload` (JSON, 业务元数据，可检索)
+
+        '
+      required:
+      - name
+      - dimension
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+          description: '集合名。命名规则：
+
+            - 以字母开头
+
+            - 后续字符：字母 / 数字 / 下划线
+
+            - 长度 1-255
+
+            '
+          example: demo_collection
+        dimension:
+          type: integer
+          minimum: 1
+          maximum: 65536
+          description: '向量维度。
+
+            - 与使用的嵌入模型输出一致（如 OpenAI text-embedding-3-small=1536；BGE-base=768）
+
+            - **一旦创建不可修改**
+
+            '
+          example: 1536
+        metric:
+          $ref: '#/components/schemas/DistanceMetric'
+          description: 距离/相似度度量。
+          example: COSINE
+        vector_type:
+          $ref: '#/components/schemas/VectorType'
+          description: '向量数据类型。默认 `FloatVector`。
+
+            - `BinaryVector` 维度必须是 8 的倍数（按位打包）
+
+            - `SparseFloatVector` 的 `dimension` 表示 NNZ 上限，向量以 `dict {idx: value}` 形式存储
+
+            - 选错类型 = 维度/度量/索引/距离计算全错
+
+            '
+          example: FloatVector
+        primary_field:
+          type: string
+          default: id
+          description: 主键字段名。V1 固定 VARCHAR。
+          example: id
+        vector_field:
+          type: string
+          default: vector
+          description: 向量字段名。
+          example: vector
+        description:
+          type: string
+          nullable: true
+          description: 集合描述（人类可读）。
+          example: Demo collection for tutorial
+        index_type:
+          $ref: '#/components/schemas/IndexType'
+          description: 索引类型。V1 推荐 `AUTOINDEX`（Milvus 自适应）。
+          example: AUTOINDEX
+        consistency_level:
+          $ref: '#/components/schemas/ConsistencyLevel'
+          description: 一致性等级。CAP 三角取舍：Strong 慢但准；Eventually 快但可能查到旧数据。
+          example: Session
+      additionalProperties: false
+      # 跨字段约束：vector_type ↔ metric 兼容性
+      # （OpenAPI 3.1 = JSON Schema 2020-12，支持 if/then/else）
+      allOf:
+        - if:
+            properties:
+              vector_type:
+                const: BinaryVector
+            required:
+              - vector_type
+          then:
+            properties:
+              metric:
+                enum:
+                  - HAMMING
+                  - JACCARD
+              dimension:
+                multipleOf: 8
+        - if:
+            properties:
+              vector_type:
+                const: Int8Vector
+            required:
+              - vector_type
+          then:
+            properties:
+              metric:
+                enum:
+                  - L2
+        - if:
+            properties:
+              vector_type:
+                const: SparseFloatVector
+            required:
+              - vector_type
+          then:
+            properties:
+              metric:
+                enum:
+                  - IP
+        - if:
+            properties:
+              vector_type:
+                enum:
+                  - FloatVector
+                  - Float16Vector
+                  - BFloat16Vector
+            required:
+              - vector_type
+          then:
+            properties:
+              metric:
+                enum:
+                  - COSINE
+                  - L2
+                  - IP
+    CollectionInfo:
+      type: object
+      description: 集合运行时信息
+      required:
+      - name
+      - dimension
+      - metric
+      - row_count
+      - loaded
+      properties:
+        name:
+          type: string
+          description: 集合名。
+          example: demo
+        dimension:
+          type: integer
+          description: 向量维度。
+          example: 1536
+        metric:
+          $ref: '#/components/schemas/DistanceMetric'
+          description: 距离/相似度度量。
+        vector_type:
+          $ref: '#/components/schemas/VectorType'
+          description: 向量数据类型。
+          example: FloatVector
+        row_count:
+          type: integer
+          description: 当前集合内向量条数。
+          example: 1000
+        loaded:
+          type: boolean
+          description: 是否已加载到内存（只有 loaded=true 才能检索）。
+          example: true
+        consistency_level:
+          $ref: '#/components/schemas/ConsistencyLevel'
+          description: 一致性等级（创建时设置，运行时不可改）
+          example: Session
+        indexes:
+          type: array
+          description: 集合上的索引列表。
+          items:
+            $ref: '#/components/schemas/IndexInfo'
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 集合创建时间（UTC）。
+          example: '2024-01-15T08:00:00Z'
+      additionalProperties: false
+    LoadRequest:
+      type: object
+      description: 加载集合的请求体
+      properties:
+        replica_number:
+          type: integer
+          minimum: 1
+          maximum: 16
+          default: 1
+          description: '副本数。每个副本占一份内存；提升读 QPS。
+
+            不能超过 QueryNode 数量。
+
+            '
+        partition_names:
+          type: array
+          items:
+            type: string
+          description: 限定加载的分区（不指定则全量加载）
+      additionalProperties: false
+    VectorRecord:
+      type: object
+      required:
+      - vector
+      properties:
+        id:
+          type: string
+          description: '主键值。留空时后端自动生成 UUID。
+
+            业务上常用"内容 hash"或外部业务 ID。
+
+            '
+          example: doc-001-chunk-007
+        vector:
+          type: array
+          items:
+            type: number
+            format: float
+          minItems: 1
+          description: '向量数组。
+
+            - 长度必须 = 集合的 `dimension`
+
+            - 服务端**不**校验语义（是否为有效嵌入）
+
+            '
+          example:
+          - 0.012
+          - -0.034
+          - 0.056
+          - 0.078
+        payload:
+          type: object
+          additionalProperties: true
+          description: 业务元数据；存到 `payload` JSON 字段，可检索。
+          example:
+            title: 向量数据库教程
+            url: https://milvus.io/docs
+      additionalProperties: false
+    DeleteRequest:
+      type: object
+      description: '删除请求：二选一。
+
+        - `ids`：按主键列表删除
+
+        - `filter`：按标量条件删除
+
+        '
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: 主键列表
+        filter:
+          type: object
+          additionalProperties: true
+          description: 标量过滤条件（key=payload 字段名，value=值）
+          example:
+            category: news
+      additionalProperties: false
+      oneOf:
+      - required:
+        - ids
+      - required:
+        - filter
+    IndexInfo:
+      type: object
+      description: 索引元信息
+      required:
+      - field_name
+      - index_type
+      - metric_type
+      properties:
+        field_name:
+          type: string
+          description: 索引对应的字段名（一般是向量字段）。
+          example: vector
+        index_type:
+          $ref: '#/components/schemas/IndexType'
+          description: 索引算法类型。
+          example: HNSW
+        metric_type:
+          $ref: '#/components/schemas/DistanceMetric'
+          description: 索引使用的距离度量。
+          example: COSINE
+        params:
+          type: object
+          additionalProperties: true
+          description: '索引参数。
+
+            - HNSW: `{"M": 16, "efConstruction": 64}`
+
+            - IVF_PQ: `{"nlist": 1024, "m": 8, "nbits": 8}`
+
+            '
+          example:
+            M: 16
+            efConstruction: 64
+      additionalProperties: false
+    CreateIndexRequest:
+      type: object
+      description: 建索引请求
+      required:
+      - field_name
+      - index_type
+      additionalProperties: false
+      properties:
+        field_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+          description: 要建索引的字段名（一般是向量字段）。
+          example: vector
+        index_type:
+          $ref: '#/components/schemas/IndexType'
+          description: 索引算法类型。
+          example: HNSW
+        metric_type:
+          $ref: '#/components/schemas/DistanceMetric'
+          description: 索引距离度量（必须与集合度量一致）。
+          example: COSINE
+        params:
+          type: object
+          # 不写 additionalProperties: true（避免与父级 additionalProperties: false
+          # 在 schemathesis strict-mode 下冲突）；保持 {} 表示任意键值对。
+          description: '索引参数。常用：
+
+            - HNSW: `{"M": 16, "efConstruction": 64}`
+
+            - IVF_FLAT: `{"nlist": 1024}`
+
+            - IVF_PQ: `{"nlist": 1024, "m": 8, "nbits": 8}`
+
+            '
+          example:
+            M: 16
+            efConstruction: 64
+    PartitionInfo:
+      type: object
+      description: 分区元信息
+      required:
+      - name
+      - row_count
+      properties:
+        name:
+          type: string
+          description: 分区名。
+          example: '2024Q1'
+        row_count:
+          type: integer
+          description: 该分区内向量条数。
+          example: 5000
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 分区创建时间（UTC）。
+          example: '2024-01-15T08:00:00Z'
+      additionalProperties: false
+    CreatePartitionRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+          description: '分区名。命名规则同集合名。
+
+            业务建议：按时间（`2024Q1`）或类别（`news/sport`）切分。
+
+            '
+      additionalProperties: false
+    SearchRequest:
+      type: object
+      required:
+      - vector
+      properties:
+        vector:
+          type: array
+          items:
+            type: number
+            format: float
+          minItems: 1
+          description: 查询向量
+        top_k:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 1000
+          description: 返回最相似的 K 条
+        filter_expr:
+          type: object
+          additionalProperties: true
+          description: '标量过滤条件（MongoDB 风格；与 Milvus 表达式等价）。
+
+
+            ## 语法
+
+
+            顶层 key = 字段名，多个 key 之间 **AND** 组合；value 为以下形式之一：
+
+
+            - **标量**：`"news" / 5 / true` → 字段 `==` 该值
+
+
+            - **运算符 dict**：`{"$gt": 10, "$lt": 100}` → 字段满足所有条件
+
+
+            ## 支持的运算符
+
+
+            | 运算符 | 含义 | 示例 | Milvus 等价 |
+
+            |---|---|---|---|
+
+            | (默认) | 等于 | `{"category": "news"}` | `category == "news"` |
+
+            | `$eq` | 等于（显式）| `{"x": {"$eq": 5}}` | `x == 5` |
+
+            | `$ne` | 不等于 | `{"x": {"$ne": 5}}` | `x != 5` |
+
+            | `$gt` | 大于 | `{"x": {"$gt": 5}}` | `x > 5` |
+
+            | `$gte` | 大于等于 | `{"x": {"$gte": 5}}` | `x >= 5` |
+
+            | `$lt` | 小于 | `{"x": {"$lt": 5}}` | `x < 5` |
+
+            | `$lte` | 小于等于 | `{"x": {"$lte": 5}}` | `x <= 5` |
+
+            | `$in` | 在集合内 | `{"x": {"$in": [1,2,3]}}` | `x in [1,2,3]` |
+
+            | `$nin` | 不在集合内 | `{"x": {"$nin": [1,2]}}` | `x not in [1,2]` |
+
+
+            ## 顶层逻辑组合（高级）
+
+
+            ```yaml
+
+            {"$or": [{"category": "news"}, {"category": "blog"}]}    # OR
+
+            ```
+
+
+            '
+          example:
+            category: news
+            score:
+              $gte: 0.8
+            tag:
+              $in:
+              - ai
+              - ml
+        output_fields:
+          type: array
+          items:
+            type: string
+          description: 返回结果中要包含的 payload 字段（不指定默认含 payload）
+        search_params:
+          type: object
+          additionalProperties: true
+          description: '检索参数。
+
+            - IVF：`{"nprobe": 16}`（越大越准越慢）
+
+            - HNSW：`{"ef": 64}`（同上）
+
+            '
+        partition_names:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: 限定扫描的分区
+      # 显式不开 additionalProperties: false，因为 search_params / filter_expr 是
+      # free-form object，与 strict 约束在 schemathesis 4.x strict-mode 下
+      # 会触发 Unsatisfiable。
+    SearchResult:
+      type: object
+      description: 检索命中记录
+      required:
+      - id
+      - score
+      properties:
+        id:
+          type: string
+          description: 命中记录的主键。
+          example: 'v_001'
+        score:
+          type: number
+          format: float
+          description: 相似度分数（与 metric 相关）
+        payload:
+          type: object
+          additionalProperties: true
+          description: 命中记录的 payload（output_fields 限定）
+      additionalProperties: false
+    QueryRequest:
+      type: object
+      description: '标量检索 / 计数。
+
+        '
+      properties:
+        filter:
+          type: object
+          additionalProperties: true
+          description: 标量过滤条件
+          example:
+            category: news
+        output_fields:
+          type: array
+          items:
+            type: string
+          description: 返回字段列表
+        limit:
+          type: integer
+          default: 100
+          minimum: 1
+          maximum: 10000
+          description: '最大返回条数。`count_only=true` 时忽略。
+
+            '
+        offset:
+          type: integer
+          default: 0
+          minimum: 0
+          description: 跳过前 N 条（分页用）
+        count_only:
+          type: boolean
+          default: false
+          description: '为 true 时只返回总条数（`data: 1024`），不返回具体记录。
+
+            教学点：`count(*)` 走的是 Milvus 内置 row_count，比 query limit 大快很多。
+
+            '
+      additionalProperties: false
+    CreateAliasRequest:
+      type: object
+      required:
+      - alias
+      properties:
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 'alias 名。
+
+            教学点：alias 与 collection 的多对一映射；用于零停机切换。
+
+            '
+      additionalProperties: false
+    HybridSearchRequest:
+      type: object
+      description: '混合检索请求体：dense + sparse + RRF。
+
+
+        教学点：
+
+        - dense：语义检索（向量）
+
+        - sparse：关键词检索（dict {idx: value}）
+
+        - RRF 平滑项 `k` 默认 60（学术经验值）
+
+        '
+      properties:
+        dense:
+          type: array
+          items:
+            type: number
+            format: float
+          description: 稠密向量（语义）
+        dense_weight:
+          type: number
+          default: 1.0
+          description: 稠密路权重
+        sparse:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+          description: '稀疏向量（关键词）。
+
+            key 是词 id，value 是权重。
+
+            '
+        sparse_weight:
+          type: number
+          default: 1.0
+          description: 稀疏路权重
+        top_k:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 1000
+          description: 返回最相似的 K 条。
+          example: 10
+        filter_expr:
+          type: object
+          additionalProperties: true
+          description: '标量过滤条件（与 ``SearchRequest.filter_expr`` 同语法；MongoDB
+            风格运算符见 SearchRequest）。'
+          example:
+            category: news
+        output_fields:
+          type: array
+          items:
+            type: string
+          description: 返回结果中要包含的 payload 字段。
+          example:
+          - category
+          - lang
+        rrf_k:
+          type: integer
+          default: 60
+          minimum: 1
+          maximum: 1000
+          description: RRF 平滑项（避免分母为 0）
+      additionalProperties: false
+    CreateDatabaseRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+          description: 数据库名
+      additionalProperties: false
+    CreateUserRequest:
+      type: object
+      required:
+      - user_name
+      - password
+      additionalProperties: false
+      properties:
+        user_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+          description: 用户名（字母开头 + 字母数字下划线）
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: 密码
+    UserInfo:
+      type: object
+      description: 用户元信息
+      required:
+      - user_name
+      additionalProperties: false
+      properties:
+        user_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+          description: 用户名。
+          example: alice
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 用户创建时间（UTC）。
+          example: '2024-01-15T08:00:00Z'
+      additionalProperties: false
+  responses:
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Conflict:
+      description: 资源已存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    BadRequest:
+      description: 参数校验失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    BackendError:
+      description: 向量库后端错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    BadRequestBody:
+      description: 请求体解析失败（JSON 格式错误等）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'

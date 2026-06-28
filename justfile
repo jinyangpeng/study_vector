@@ -41,7 +41,7 @@ create-network:
 
 # 启动 Milvus（用本仓库的 compose）；如果 Milvus 已存在则跳过
 milvus-up:
-    Push-Location deploy; try { docker compose up -d milvus etcd minio 2>&1 | Out-Null } catch { Write-Host "（Milvus 容器已存在或启动失败，可忽略）" -ForegroundColor Yellow }; Pop-Location
+    Push-Location docker; try { docker compose up -d milvus etcd minio 2>&1 | Out-Null } catch { Write-Host "（Milvus 容器已存在或启动失败，可忽略）" -ForegroundColor Yellow }; Pop-Location
     Write-Host "💡 若要检查 Milvus 健康，单独运行：docker ps --filter name=milvus" -ForegroundColor Cyan
 
 # ───────────────────────── 初始化 / 安装 ─────────────────────────
@@ -117,10 +117,10 @@ stop:
 
 # 用 Docker 编排启动整套（milvus + api + frontend）
 up:
-    Push-Location deploy; docker compose up -d; Pop-Location
-    Write-Host "✅ 已启动 deploy/docker-compose.yml 全部服务" -ForegroundColor Green
+    Push-Location docker; docker compose up -d --build; Pop-Location
+    Write-Host "✅ 已启动 docker/docker-compose.yml 全部服务" -ForegroundColor Green
 
 # 用 Docker 编排停整套
 down:
-    Push-Location deploy; docker compose down; Pop-Location
-    Write-Host "✅ 已停 deploy/docker-compose.yml 全部服务" -ForegroundColor Green
+    Push-Location docker; docker compose down; Pop-Location
+    Write-Host "✅ 已停 docker/docker-compose.yml 全部服务" -ForegroundColor Green

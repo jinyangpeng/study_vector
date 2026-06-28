@@ -113,10 +113,9 @@ backends/go/
         repository/        # 实现 VectorRepository 协议
         api/               # gin/chi 路由
         config/            # 多环境配置
-    deploy/Dockerfile
 ```
 
-顶层 `deploy/docker-compose.yml` 加 `go-api` 服务；前端 `stores/backend.ts` 加 Go 后端选项。
+顶层 `docker/docker-compose.yml` 加 `go-api` 服务；前端 `stores/backend.ts` 加 Go 后端选项。
 
 ## 7. 验收检查（首期）
 

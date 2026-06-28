@@ -38,7 +38,8 @@ async def test_health(client: AsyncClient):
     r = await client.get("/api/v1/health")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"status": "ok"}
+    assert body["code"] == 0
+    assert body["data"]["status"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -117,7 +118,7 @@ async def test_collection_not_found_returns_404(client: AsyncClient):
     r = await client.get("/api/v1/collections/missing")
     assert r.status_code == 404
     body = r.json()
-    assert body["code"] == "COLLECTION_NOT_FOUND"
+    assert body["code"] == 1404
     assert "missing" in body["message"]
 
 
@@ -130,7 +131,7 @@ async def test_validation_error_returns_422(client: AsyncClient):
     )
     assert r.status_code == 422
     body = r.json()
-    assert body["code"] == "VALIDATION_ERROR"
+    assert body["code"] == 1422
 
 
 @pytest.mark.asyncio

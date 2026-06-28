@@ -42,4 +42,4 @@ npm run build
 
 ## Docker 部署
 
-参见 [`deploy/docker-compose.yml`](../deploy/docker-compose.yml)。
+参见 [`docker/docker-compose.yml`](../docker/docker-compose.yml) 与 [`docker/README.md`](../docker/README.md)。

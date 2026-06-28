@@ -27,7 +27,7 @@
 ### 方式 B：用本仓库 compose 自带一套
 
 ```bash
-cd deploy
+cd docker
 cp .env.example .env
 docker compose up -d milvus etcd minio
 ```
@@ -59,14 +59,14 @@ uv run uvicorn study_vector.main:app --reload --host 0.0.0.0 --port 8000
 ### 3.2 Docker 启动（与 Milvus 同网络 / 生产环境）
 
 ```bash
-cd backends/python
-docker build -f deploy/Dockerfile -t study-vector-api:dev .
+cd ../..
+docker build -f docker/api/Dockerfile -t study-vector-api:dev .
 
 docker run -d --name study_vector_api \
   --network study_vector_study_vector_net \
   -p 8000:8000 \
   -e APP_ENV=dev \
-  -e MILVUS_HOST=milvus-standalone \
+  -e MILVUS_HOST=milvus \
   -e MILVUS_PORT=19530 \
   -e MILVUS_USER=root \
   -e MILVUS_PASSWORD=Milvus \
@@ -74,9 +74,9 @@ docker run -d --name study_vector_api \
   study-vector-api:dev
 ```
 
-> 这里之所以用 `milvus-standalone`（容器名）是因为 API **跑在容器内**，
+> 这里之所以用 `milvus`（compose service 名）是因为 API **跑在容器内**，
 > 容器内的 `localhost` 指的是自己、宿主上的 `127.0.0.1` 不通，
-> **唯一稳定方式是用容器名**（依赖 Docker 内置 DNS）。
+> **唯一稳定方式是用 service 名**（依赖 Docker 内置 DNS）。
 
 ### 3.3 一键选择
 

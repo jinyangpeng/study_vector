@@ -24,19 +24,21 @@ study_vector/
 │   ├── python/                  # 首期交付：FastAPI + uv + pymilvus
 │   │   ├── src/study_vector/    # 业务代码（api / domain / infra / repositories）
 │   │   ├── tests/               # 单元 + 集成测试
-│   │   ├── config/              # dev / test / prod 多环境配置
-│   │   └── deploy/Dockerfile
+│   │   └── config/              # dev / test / prod 多环境配置
 │   ├── go/                      # 未来：Go (Gin / Chi)
 │   └── node/                    # 未来：Node (Express / Fastify)
+├── docker/                      # 容器化部署（集中管理）
+│   ├── docker-compose.yml       # 基础编排（Milvus + API + 前端）
+│   ├── docker-compose.dev.yml   # 开发覆盖：仅依赖服务
+│   ├── docker-compose.prod.yml  # 生产覆盖：资源限制 + 日志轮转
+│   ├── api/Dockerfile           # 后端镜像（多阶段，非 root）
+│   ├── frontend/Dockerfile      # 前端镜像（node 构建 → nginx）
+│   ├── frontend/nginx.conf      # SPA 回退 + API 反代
+│   ├── .env.example             # 环境变量模板
+│   └── volumes/                 # 数据持久化（.gitignore）
 ├── frontend/                    # 响应式前端
 │   ├── src/                     # Vue 3 + Vite + Element Plus + Pinia
-│   ├── e2e/smoke.mjs            # Playwright 端到端冒烟
-│   ├── nginx.conf               # 生产部署：API 反代
-│   └── Dockerfile
-├── deploy/                      # 顶层 Docker Compose 编排
-│   ├── docker-compose.yml       # Milvus + API + 前端
-│   ├── .env.example
-│   └── milvus/                  # Milvus volumes
+│   └── e2e/smoke.mjs            # Playwright 端到端冒烟
 ├── docs/
 │   ├── quickstart.md            # 5 分钟跑起来
 │   ├── architecture/            # 架构设计文档

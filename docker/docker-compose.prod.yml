@@ -1,0 +1,55 @@
+# ============================================================================
+# 生产覆盖：资源限制 + 日志轮转 + always 重启 + 日志强制 JSON
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 注意：deploy.resources.limits 在非 swarm 的 compose v2 中同样生效
+# ============================================================================
+
+x-prod-logging: &prod-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  etcd:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  minio:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits: { memory: 1G }
+
+  milvus:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits: { memory: 4G }
+
+  api:
+    restart: always
+    logging: *prod-logging
+    environment:
+      APP_ENV: prod
+      LOG_LEVEL: ${LOG_LEVEL:-WARNING}
+      LOG_JSON: "true"
+    deploy:
+      resources:
+        limits: { memory: 1G }
+        reservations: { memory: 256M }
+
+  frontend:
+    restart: always
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits: { memory: 256M }
