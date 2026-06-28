@@ -56,7 +56,7 @@ study_vector/
 ```bash
 cd docker
 cp .env.example .env
-docker compose up -d --build
+docker compose up -d
 ```
 
 通过 `.env` 的 `COMPOSE_PROFILES` 选择 Milvus 部署模式（改完重新 `up -d` 即可）：
