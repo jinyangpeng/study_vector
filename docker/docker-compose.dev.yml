@@ -2,6 +2,8 @@
 # 开发覆盖：仅启动依赖服务（etcd + minio + milvus）
 # API / 前端在宿主本地运行（uvicorn --reload / vite dev），方便热重载调试
 #
+# 前提：.env 里 COMPOSE_PROFILES=milvus（否则 milvus 套件不会启动）
+#
 # 用法：
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
@@ -12,9 +14,3 @@ services:
     profiles: ["disabled"]
   frontend:
     profiles: ["disabled"]
-
-  # 开发态确保 Milvus gRPC / metrics 对宿主可见（基础编排已含，这里仅占位说明）
-  milvus:
-    ports:
-      - "${MILVUS_HOST_PORT:-19530}:19530"
-      - "${MILVUS_METRICS_PORT:-9091}:9091"

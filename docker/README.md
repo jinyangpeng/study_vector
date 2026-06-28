@@ -63,14 +63,17 @@ docker/
 ```bash
 cd docker
 cp .env.example .env
-# 按需编辑 .env，默认值可直接跑通
+# 按需编辑 .env（关键：COMPOSE_PROFILES 决定 Milvus 部署模式）
 ```
 
-### 2. 全量启动（默认 = 基础编排）
+### 2. 启动
 
 ```bash
 docker compose up -d --build
 ```
+
+> `.env` 里 `COMPOSE_PROFILES=milvus`（默认）即为内置模式，开箱即用。
+> 见下文「Milvus 部署模式」选择适合自己的方式。
 
 验证：
 
@@ -78,26 +81,63 @@ docker compose up -d --build
 docker compose ps
 curl http://localhost:8000/api/v1/health      # {"status":"healthy"}
 # 浏览器打开 http://localhost:5173
-# MinIO 控制台 http://localhost:9001  (minioadmin / minioadmin)
+# 内置模式下 MinIO 控制台 http://localhost:9001  (minioadmin / minioadmin)
 ```
 
 ---
 
-## 三种使用场景
+## Milvus 部署模式
 
-### 场景 A — 全量容器化（默认）
+通过 `.env` 的 **`COMPOSE_PROFILES`** 一键切换，命令统一为 `docker compose up -d`。
 
-所有服务跑在容器，适合演示 / CI / 一键拉起。
+| 模式     | `COMPOSE_PROFILES` | 启动服务                            | 适用场景                     |
+| -------- | ------------------ | ----------------------------------- | ---------------------------- |
+| 内置模式 | `milvus`（默认）   | etcd + minio + milvus + api + 前端 | 首次使用 / 无现成 Milvus     |
+| 外部模式 | （留空）           | api + 前端                          | 已有自建 Milvus，省资源      |
+
+### 模式 A — 内置 Milvus（开箱即用，默认）
+
+启动项目自带的 etcd + minio + milvus + api + 前端，全套容器化。
+
+`.env` 保持默认：
+```env
+COMPOSE_PROFILES=milvus
+MILVUS_HOST=milvus          # 指向 compose 内的 milvus service
+```
 
 ```bash
 docker compose up -d --build
 ```
 
-### 场景 B — 仅依赖服务（本地开发）
+### 模式 B — 外部 Milvus（复用已部署实例）
+
+仅启动 api + 前端，连接你已部署的 Milvus（不启动 etcd/minio/milvus，省资源）。
+
+编辑 `.env`：
+```env
+COMPOSE_PROFILES=                 # 留空，禁用内置 milvus 套件
+MILVUS_HOST=192.168.1.100         # 改为你的外部 Milvus 地址
+MILVUS_PORT=19530
+MILVUS_SECURE=false
+```
+
+```bash
+docker compose up -d --build
+```
+
+> 外部 Milvus 无需与本项目容器同网络——api 从容器内通过 `MILVUS_HOST` 连接，
+> 只要该地址从容器网络可达即可（同宿主用宿主 IP，跨主机用对应 IP/域名）。
+
+---
+
+## 其他场景
+
+### 场景 C — 仅依赖服务（本地开发）
 
 只启动 Milvus 及其依赖，**API 和前端在宿主本地运行**（支持热重载调试）：
 
 ```bash
+# 前提：.env 里 COMPOSE_PROFILES=milvus
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 # 本地跑后端
@@ -109,7 +149,7 @@ cd ../frontend && npm run dev -- --host 127.0.0.1 --port 5173
 
 > 原理：dev 覆盖文件给 `api`/`frontend` 打上 `disabled` profile，默认 `up` 不启动它们。
 
-### 场景 C — 生产部署
+### 场景 D — 生产部署
 
 叠加生产覆盖：资源限制 + 日志轮转 + `always` 重启 + 强制 JSON 日志。
 
@@ -145,37 +185,22 @@ docker compose down --rmi local        # 同时删本地构建的镜像
 
 完整列表见 [`.env.example`](.env.example)，关键项：
 
-| 变量                | 默认值            | 说明                                       |
-| ------------------- | ----------------- | ------------------------------------------ |
-| `APP_ENV`           | `prod`            | 应用环境：dev / test / prod                |
-| `MILVUS_HOST`       | `milvus`          | API 连接的 Milvus 地址（外部实例改 IP）    |
-| `MILVUS_USER`       | `root`            | Milvus 用户名                              |
-| `MILVUS_PASSWORD`   | `Milvus`          | Milvus 密码                                |
-| `API_PORT`          | `8000`            | API 宿主映射端口                           |
-| `FRONTEND_PORT`     | `5173`            | 前端宿主映射端口                           |
-| `LOG_LEVEL`         | `INFO`            | 日志级别                                   |
-| `LOG_JSON`          | `true`            | 是否输出 JSON 日志                         |
-| `MINIO_ACCESS_KEY`  | `minioadmin`      | MinIO 凭据（**生产务必修改**）             |
-| `MINIO_SECRET_KEY`  | `minioadmin`      | MinIO 凭据（**生产务必修改**）             |
+| 变量                | 默认值            | 说明                                                  |
+| ------------------- | ----------------- | ----------------------------------------------------- |
+| `COMPOSE_PROFILES`  | `milvus`          | **Milvus 模式开关**：`milvus`=内置，留空=外部         |
+| `APP_ENV`           | `prod`            | 应用环境：dev / test / prod                           |
+| `MILVUS_HOST`       | `milvus`          | API 连接的 Milvus 地址（内置=`milvus`，外部=IP/域名） |
+| `MILVUS_USER`       | `root`            | Milvus 用户名                                         |
+| `MILVUS_PASSWORD`   | `Milvus`          | Milvus 密码                                           |
+| `API_PORT`          | `8000`            | API 宿主映射端口                                      |
+| `FRONTEND_PORT`     | `5173`            | 前端宿主映射端口                                      |
+| `LOG_LEVEL`         | `INFO`            | 日志级别                                              |
+| `LOG_JSON`          | `true`            | 是否输出 JSON 日志                                    |
+| `MINIO_ACCESS_KEY`  | `minioadmin`      | MinIO 凭据（内置模式，**生产务必修改**）              |
+| `MINIO_SECRET_KEY`  | `minioadmin`      | MinIO 凭据（内置模式，**生产务必修改**）              |
 
 > 容器内通信端口固定（Milvus 19530、API 8000、前端 80），仅宿主映射端口可配。
-
----
-
-## 接入外部 Milvus
-
-若已有自建 Milvus 实例，无需启动内置的 etcd/minio/milvus：
-
-1. 编辑 `.env`：
-   ```env
-   MILVUS_HOST=192.168.1.100      # 你的 Milvus 地址
-   MILVUS_PORT=19530
-   MILVUS_SECURE=false
-   ```
-2. 仅启动 API + 前端：
-   ```bash
-   docker compose up -d --build api frontend
-   ```
+> `MINIO_*` / `MILVUS_HOST_PORT` 等仅在内置模式（`COMPOSE_PROFILES=milvus`）生效。
 
 ---
 

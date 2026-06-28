@@ -1,13 +1,18 @@
 # ============================================================================
 # study_vector — 基础编排（定义所有服务）
 #
+# Milvus 部署模式（由 .env 的 COMPOSE_PROFILES 控制）：
+#   COMPOSE_PROFILES=milvus   内置模式：启动 etcd+minio+milvus（开箱即用，默认）
+#   COMPOSE_PROFILES=         外部模式：仅启动 api+frontend，连接你已部署的 Milvus
+#                              （此时把 MILVUS_HOST 改为外部 Milvus 地址）
+#
 # 环境差异通过 override 文件叠加：
 #   - docker-compose.dev.yml   开发：仅依赖服务（Milvus），API/前端在宿主本地跑
 #   - docker-compose.prod.yml  生产：资源限制 + 日志轮转 + always 重启
 #
 # 用法：
 #   cp .env.example .env  &&  按需修改
-#   docker compose up -d                                          # 全量（默认）
+#   docker compose up -d                                          # 按 .env 的 COMPOSE_PROFILES
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml  up -d   # 仅依赖
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   # 生产
 # ============================================================================
@@ -16,7 +21,9 @@ name: study_vector
 
 services:
   # ============== Milvus 依赖：etcd ==============
+  # profiles: milvus 激活时才启动（外部 Milvus 模式下不启动，省资源）
   etcd:
+    profiles: ["milvus"]
     container_name: ${COMPOSE_PROJECT_NAME:-study_vector}_etcd
     image: quay.io/coreos/etcd:v3.5.16
     environment:
@@ -32,6 +39,7 @@ services:
 
   # ============== Milvus 依赖：minio（对象存储）==============
   minio:
+    profiles: ["milvus"]
     container_name: ${COMPOSE_PROJECT_NAME:-study_vector}_minio
     image: minio/minio:RELEASE.2024-09-13T20-26-02Z
     environment:
@@ -47,6 +55,7 @@ services:
 
   # ============== Milvus Standalone ==============
   milvus:
+    profiles: ["milvus"]
     container_name: ${COMPOSE_PROJECT_NAME:-study_vector}_milvus
     image: milvusdb/milvus:v2.4.10
     command: ["milvus", "run", "standalone"]
@@ -90,9 +99,8 @@ services:
       MILVUS_SECURE: ${MILVUS_SECURE:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_JSON: ${LOG_JSON:-true}
-    depends_on:
-      milvus:
-        condition: service_healthy
+    # 注意：不写 depends_on milvus —— 外部 Milvus 模式下 milvus service 不存在。
+    # 内置模式下 api 靠 restart: unless-stopped 自动重试连接（milvus 首次启动较慢）。
     ports:
       - "${API_PORT:-8000}:8000"
     restart: unless-stopped

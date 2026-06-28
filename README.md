@@ -48,12 +48,39 @@ study_vector/
 
 ## 3. 快速开始
 
-> 项目用 [`just`](https://github.com/casey/just) 编排命令。先安装 just：
+两种方式任选：**Docker 一键部署**（最简，推荐体验）或 **宿主开发模式**（日常开发，热重载）。
+完整说明见 [`docs/quickstart.md`](docs/quickstart.md)。
+
+### 方式 A：Docker 一键部署（最简）
+
+```bash
+cd docker
+cp .env.example .env
+docker compose up -d --build
+```
+
+通过 `.env` 的 `COMPOSE_PROFILES` 选择 Milvus 部署模式（改完重新 `up -d` 即可）：
+
+| `COMPOSE_PROFILES` | 模式     | 启动服务                    | 适用                      |
+| ------------------ | -------- | --------------------------- | ------------------------- |
+| `milvus`（默认）   | 内置模式 | etcd+minio+milvus+api+前端 | 无现成 Milvus，开箱即用   |
+| （留空）           | 外部模式 | api+前端                    | 已有自建 Milvus，需把 `MILVUS_HOST` 改为外部地址 |
+
+> 部署细节、多环境覆盖、故障排查见 [`docker/README.md`](docker/README.md)。
+
+验证：
+
+```bash
+curl http://localhost:8000/api/v1/health    # {"code":0,...,"status":"ok"}
+# 浏览器打开 http://localhost:5173
+```
+
+### 方式 B：宿主开发模式（热重载，日常开发）
+
+> 用 [`just`](https://github.com/casey/just) 编排命令。先安装 just：
 > - Windows: `winget install just` 或 `scoop install just`
 > - macOS: `brew install just`
 > - Linux: `cargo install just` 或 [GitHub Release](https://github.com/casey/just/releases)
-
-参见 [`docs/quickstart.md`](docs/quickstart.md)。核心命令：
 
 ```bash
 # 0. 一键安装
@@ -118,6 +145,7 @@ node e2e/smoke.mjs    # 8 步全部 [OK]，并产出截图
 | 文档                                                            | 作用                                  |
 | --------------------------------------------------------------- | ------------------------------------- |
 | [docs/quickstart.md](docs/quickstart.md)                         | 5 分钟快速跑起来                      |
+| [docker/README.md](docker/README.md)                             | Docker 部署完整文档                   |
 | [docs/architecture/overview.md](docs/architecture/overview.md)   | 整体架构图 + 分层职责 + 扩展点        |
 | [docs/architecture/repository-pattern.md](docs/architecture/repository-pattern.md) | Repository 模式 + 新增向量库步骤 |
 | [docs/architecture/multi-backend.md](docs/architecture/multi-backend.md)           | 多语言后端 + 前端解耦机制       |
