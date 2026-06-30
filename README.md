@@ -16,7 +16,35 @@
 - 后端按语言隔离（`backends/python/` / `backends/go/` / `backends/node/`），前端与具体后端语言解耦，只依赖统一 OpenAPI 契约。
 - **企业级实践**：分层架构、配置外部化、依赖注入、可观测性、容器化部署、完整文档（含中文注释）。
 
-## 2. 目录结构
+## 2. 效果预览
+
+> 以下为前端管理控制台的实际运行截图。图片统一存放在 [`docs/images/`](docs/images/) 目录。
+
+### 集合列表
+
+![集合列表](docs/images/collections.png)
+
+首页，集中展示所有 Collection 及其维度、索引、行数等统计信息，支持创建 / 删除 / 进入详情。
+
+### 集合详情
+
+![集合详情](docs/images/collection-detail.png)
+
+点击集合进入详情页，查看 Schema 字段定义、索引、分区等结构信息。
+
+### 向量检索
+
+![向量检索](docs/images/search.png)
+
+核心功能页，支持纯向量相似度检索与「标量过滤 + 向量」混合检索，实时返回 Top-K 结果。
+
+### 向量数据
+
+![向量数据](docs/images/vectors.png)
+
+向量的增删改查界面，可视化浏览与编辑 Collection 中的向量数据。
+
+## 3. 目录结构
 
 ```
 study_vector/
@@ -46,7 +74,7 @@ study_vector/
 └── README.md
 ```
 
-## 3. 快速开始
+## 4. 快速开始
 
 两种方式任选：**Docker 一键部署**（最简，推荐体验）或 **宿主开发模式**（日常开发，热重载）。
 完整说明见 [`docs/quickstart.md`](docs/quickstart.md)。
@@ -114,7 +142,7 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-## 4. 端到端验收
+## 5. 端到端验收
 
 ```bash
 # Python 测试
@@ -127,7 +155,7 @@ cd ../../frontend
 node e2e/smoke.mjs    # 8 步全部 [OK]，并产出截图
 ```
 
-## 5. 路线图
+## 6. 路线图
 
 - [x] 阶段 0：仓库与目录骨架
 - [x] 阶段 1：Python 后端（FastAPI + uv + pymilvus）
@@ -140,7 +168,7 @@ node e2e/smoke.mjs    # 8 步全部 [OK]，并产出截图
 - [ ] 阶段 8：多向量库（Chroma / Qdrant / Weaviate / pgvector）
 - [ ] 阶段 9：多语言后端（Go / Node）
 
-## 6. 文档导航
+## 7. 文档导航
 
 | 文档                                                            | 作用                                  |
 | --------------------------------------------------------------- | ------------------------------------- |
@@ -151,7 +179,7 @@ node e2e/smoke.mjs    # 8 步全部 [OK]，并产出截图
 | [docs/architecture/multi-backend.md](docs/architecture/multi-backend.md)           | 多语言后端 + 前端解耦机制       |
 | [docs/compare/milvus.md](docs/compare/milvus.md)               | Milvus 特性 + 踩坑笔记 + 性能粗观察   |
 
-## 7. 贡献
+## 8. 贡献
 
 欢迎 PR。新增向量库时只需：
 1. 在 `backends/python/src/study_vector/infra/<新库>/repository.py` 实现 `VectorRepository` 协议
@@ -160,6 +188,6 @@ node e2e/smoke.mjs    # 8 步全部 [OK]，并产出截图
 
 业务代码、API 路由、领域模型、前端**完全不需要改动**。
 
-## 8. License
+## 9. License
 
 MIT
